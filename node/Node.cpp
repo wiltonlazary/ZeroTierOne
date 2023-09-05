@@ -36,6 +36,11 @@
 #include "Trace.hpp"
 #include "Metrics.hpp"
 
+// FIXME: remove this suppression and actually fix warnings
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#endif
+
 namespace ZeroTier {
 
 /****************************************************************************/
@@ -80,7 +85,11 @@ Node::Node(void *uptr,void *tptr,const struct ZT_Node_Callbacks *callbacks,int64
 			RR->identity.toString(false,RR->publicIdentityStr);
 			RR->identity.toString(true,RR->secretIdentityStr);
 		} else {
-			n = -1;
+			throw ZT_EXCEPTION_INVALID_IDENTITY;
+		}
+
+		if (!RR->identity.locallyValidate()) {
+			throw ZT_EXCEPTION_INVALID_IDENTITY;
 		}
 	}
 
@@ -239,9 +248,15 @@ public:
 		const std::vector<InetAddress> *const alwaysContactEndpoints = _alwaysContact.get(p->address());
 		if (alwaysContactEndpoints) {
 
-			// Contact upstream peers as infrequently as possible
 			ZT_PeerRole role = RR->topology->role(p->address());
+
+			// Contact upstream peers as infrequently as possible
 			int roleBasedTimerScale = (role == ZT_PEER_ROLE_LEAF) ? 2 : 16;
+
+			// Unless we don't any have paths to the roots, then we shouldn't wait a long time to contact them
+			bool hasPaths = p->paths(RR->node->now()).size() > 0;
+			roleBasedTimerScale = (role != ZT_PEER_ROLE_LEAF && !hasPaths) ? 0 : roleBasedTimerScale;
+
 			if ((RR->node->now() - p->lastSentFullHello()) <= (ZT_PATH_HEARTBEAT_PERIOD * roleBasedTimerScale)) {
 				return;
 			}
@@ -298,7 +313,7 @@ ZT_ResultCode Node::processBackgroundTasks(void *tptr,int64_t now,volatile int64
 	Mutex::Lock bl(_backgroundTasksLock);
 
 	// Process background bond tasks
-	unsigned long bondCheckInterval = ZT_PING_CHECK_INVERVAL;
+	unsigned long bondCheckInterval = ZT_PING_CHECK_INTERVAL;
 	if (RR->bc->inUse()) {
 		bondCheckInterval = std::max(RR->bc->minReqMonitorInterval(), ZT_CORE_TIMER_TASK_GRANULARITY);
 		if ((now - _lastGratuitousPingCheck) >= ZT_CORE_TIMER_TASK_GRANULARITY) {
@@ -307,7 +322,7 @@ ZT_ResultCode Node::processBackgroundTasks(void *tptr,int64_t now,volatile int64
 		}
 	}
 
-	unsigned long timeUntilNextPingCheck = _lowBandwidthMode ? (ZT_PING_CHECK_INVERVAL * 5) : ZT_PING_CHECK_INVERVAL;
+	unsigned long timeUntilNextPingCheck = _lowBandwidthMode ? (ZT_PING_CHECK_INTERVAL * 5) : ZT_PING_CHECK_INTERVAL;
 	const int64_t timeSinceLastPingCheck = now - _lastPingCheck;
 	if (timeSinceLastPingCheck >= timeUntilNextPingCheck) {
 		try {
@@ -574,6 +589,7 @@ ZT_PeerList *Node::peers() const
 					p->paths[p->pathCount].latencyVariance = (*path)->latencyVariance();
 					p->paths[p->pathCount].packetLossRatio = (*path)->packetLossRatio();
 					p->paths[p->pathCount].packetErrorRatio = (*path)->packetErrorRatio();
+					p->paths[p->pathCount].assignedFlowCount = (*path)->assignedFlowCount();
 					p->paths[p->pathCount].relativeQuality = (*path)->relativeQuality();
 					p->paths[p->pathCount].linkSpeed = (*path)->givenLinkSpeed();
 					p->paths[p->pathCount].bonded = (*path)->bonded();
@@ -587,9 +603,9 @@ ZT_PeerList *Node::peers() const
 		}
 		if (pi->second->bond()) {
 			p->isBonded = pi->second->bond();
-			p->bondingPolicy = pi->second->bond()->policy();
-			p->numAliveLinks = pi->second->bond()->getNumAliveLinks();
-			p->numTotalLinks = pi->second->bond()->getNumTotalLinks();
+			p->bondingPolicy = pi->second->bondingPolicy();
+			p->numAliveLinks = pi->second->getNumAliveLinks();
+			p->numTotalLinks = pi->second->getNumTotalLinks();
 		}
 	}
 
@@ -836,7 +852,7 @@ void Node::ncSendError(uint64_t nwid,uint64_t requestPacketId,const Address &des
 			case NetworkController::NC_ERROR_AUTHENTICATION_REQUIRED: {
 				//fprintf(stderr, "\n\nGot auth required\n\n");
 				break;
-			} 
+			}
 
 			default:
 				break;

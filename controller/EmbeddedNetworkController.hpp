@@ -70,6 +70,7 @@ public:
 
 	void configureHTTPControlPlane(
 		httplib::Server &s,
+		httplib::Server &sV6,
 		const std::function<void(const httplib::Request&, httplib::Response&, std::string)>);
 
 	void handleRemoteTrace(const ZT_RemoteTrace &rt);
@@ -139,9 +140,6 @@ private:
 	std::vector<std::thread> _threads;
 	std::mutex _threads_l;
 
-	bool _ssoExpiryRunning;
-	std::thread _ssoExpiry;
-
 	std::unordered_map< _MemberStatusKey,_MemberStatus,_MemberStatusHash > _memberStatus;
 	std::mutex _memberStatus_l;
 
@@ -150,6 +148,34 @@ private:
 
 	RedisConfig *_rc;
 	std::string _ssoRedirectURL;
+
+	bool _ssoExpiryRunning;
+	std::thread _ssoExpiry;
+
+#ifdef CENTRAL_CONTROLLER_REQUEST_BENCHMARK
+	prometheus::simpleapi::benchmark_family_t _member_status_lookup;
+	prometheus::simpleapi::counter_family_t   _member_status_lookup_count;
+	prometheus::simpleapi::benchmark_family_t _node_is_online;
+	prometheus::simpleapi::counter_family_t   _node_is_online_count;
+	prometheus::simpleapi::benchmark_family_t _get_and_init_member;
+	prometheus::simpleapi::counter_family_t   _get_and_init_member_count;
+	prometheus::simpleapi::benchmark_family_t _have_identity;
+	prometheus::simpleapi::counter_family_t   _have_identity_count;
+	prometheus::simpleapi::benchmark_family_t _determine_auth;
+	prometheus::simpleapi::counter_family_t   _determine_auth_count;
+	prometheus::simpleapi::benchmark_family_t _sso_check;
+	prometheus::simpleapi::counter_family_t   _sso_check_count;
+	prometheus::simpleapi::benchmark_family_t _auth_check;
+	prometheus::simpleapi::counter_family_t   _auth_check_count;
+	prometheus::simpleapi::benchmark_family_t _json_schlep;
+	prometheus::simpleapi::counter_family_t   _json_schlep_count;
+	prometheus::simpleapi::benchmark_family_t _issue_certificate;
+	prometheus::simpleapi::counter_family_t   _issue_certificate_count;
+	prometheus::simpleapi::benchmark_family_t _save_member;
+	prometheus::simpleapi::counter_family_t   _save_member_count;
+	prometheus::simpleapi::benchmark_family_t _send_netconf;
+	prometheus::simpleapi::counter_family_t   _send_netconf_count;
+#endif
 };
 
 } // namespace ZeroTier
